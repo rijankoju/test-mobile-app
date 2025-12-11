@@ -9,6 +9,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # ... (Job 1 steps are fine, they just trigger the build) ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # ... (Node setup, Expo setup, npm install, Trigger EAS Android Build (Cloud) steps here) ...
+      - name: Trigger EAS Android Build (Cloud)
+        run: eas build --platform android --profile preview --non-interactive
+
+  deploy-firebase:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      # ADDED: You must check out the repo here again so EAS CLI knows the project context
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -17,44 +29,20 @@ jobs:
         with:
           node-version: 18
 
-      - name: Setup Expo
+      - name: Setup Expo (uses EXPO_TOKEN from secrets)
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ secrets.EXPO_TOKEN }} 
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Trigger EAS Android Build (Cloud)
-        # Added the --non-interactive flag here!
-        run: eas build --platform android --profile preview --non-interactive
-
-      # We still need the second job to download the artifact and deploy it.
-
-  deploy-firebase:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      # ... (inside the 'deploy-firebase' job steps) ...
       - name: Download the last completed Android APK artifact
+        # This step now has full context (checkout + auth token) to run eas build:list
         run: |
+          # Install jq (safe to run, installs if needed)
           sudo apt-get update && sudo apt-get install -y jq
 
-          # Find the build URL using explicit object access (more robust quoting)
           BUILD_JSON=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json)
-          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.[0].artifacts.buildUrl')
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '..artifacts.buildUrl')
           
           if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
             echo "Error: Could not find a finished build URL."
