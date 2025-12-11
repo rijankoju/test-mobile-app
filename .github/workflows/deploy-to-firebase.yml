@@ -26,41 +26,43 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Start EAS Android Build, Wait, and Download Artifact
-        # This is the correct combination for CI/CD: 
-        # It waits for the build and saves the output locally.
-        run: eas build:run --platform android --profile preview --non-interactive --output=app-release.apk
+      - name: Trigger EAS Android Build (Cloud)
+        # This command is simple and correct. It starts the build on Expo's servers.
+        run: eas build --platform android --profile preview
 
-      - name: Upload artifact to GitHub Artifact Storage
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app-release.apk 
-
-      # Note: We are no longer using upload-artifact in this job, 
-      # as the file is not locally present yet.
-      # The deploy job will fetch the build result directly from EAS servers.
+      # The job finishes here. The build continues in the cloud.
 
   deploy-firebase:
-    # This job now depends on the result of the 'build' job being complete in the cloud
+    # This job waits for the 'build' job to complete
     needs: [build]
     runs-on: ubuntu-latest
     steps:
-      - name: Setup Node.js (needed for the Expo action in this job)
+      # We need Expo CLI tools available in this new job context to fetch the build URL
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Setup Expo (needed to access EAS context)
+      - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ secrets.EXPO_TOKEN }} # Needs the EXPO_TOKEN again
 
       - name: Download the last completed Android APK artifact
-        # We use a *different* Expo action here to find the latest successful build and download it
+        # We find the URL using eas build:list and download the file using curl
         run: |
-          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --json | jq -r '.[0].artifacts.buildUrl')
+          # Install jq to parse JSON output efficiently
+          sudo apt-get update && sudo apt-get install -y jq
+
+          # Find the build URL of the most recent finished Android 'preview' build
+          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json | jq -r '.[0].artifacts.buildUrl')
+          
+          if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
+            echo "Error: Could not find a finished build URL."
+            exit 1
+          fi
+
           echo "Downloading APK from: $BUILD_URL"
           curl -L -o app-release.apk $BUILD_URL
         shell: bash
@@ -71,4 +73,4 @@ jobs:
           appId: ${{ secrets.FIREBASE_APP_ID }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
           groups: QA
-          file: app-release.apk # This path now exists due to the curl command
+          file: app-release.apk
