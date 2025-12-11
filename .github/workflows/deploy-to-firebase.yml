@@ -9,12 +9,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # ... (Job 1 steps are fine, they just trigger the build) ...
       - name: Checkout repository
         uses: actions/checkout@v4
-      # ... (Node setup, Expo setup, npm install, Trigger EAS Android Build (Cloud) steps here) ...
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm install
+
       - name: Trigger EAS Android Build (Cloud)
+        # Added the --non-interactive flag here!
         run: eas build --platform android --profile preview --non-interactive
+
+      # We still need the second job to download the artifact and deploy it.
 
   deploy-firebase:
     needs: [build]
@@ -34,29 +50,3 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }} 
-
-      - name: Download the last completed Android APK artifact
-        # This step now has full context (checkout + auth token) to run eas build:list
-        run: |
-          # Install jq (safe to run, installs if needed)
-          sudo apt-get update && sudo apt-get install -y jq
-
-          BUILD_JSON=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json)
-          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '..artifacts.buildUrl')
-          
-          if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
-            echo "Error: Could not find a finished build URL."
-            exit 1
-          fi
-
-          echo "Downloading APK from: $BUILD_URL"
-          curl -L -o app-release.apk "$BUILD_URL"
-        shell: bash
-
-      - name: Deploy to Firebase App Distribution
-        uses: wzieba/Firebase-Distribution-Github-Action@v1
-        with:
-          appId: ${{ secrets.FIREBASE_APP_ID }}
-          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-          groups: QA
-          file: app-release.apk
