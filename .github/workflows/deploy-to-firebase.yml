@@ -1,4 +1,9 @@
-# ... (previous workflow preamble) ...
+name: Build and Deploy to Firebase App Distribution
+
+on:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -22,21 +27,19 @@ jobs:
         run: npm install
 
       - name: Start EAS Android Build and Download Artifact
-        # This single step manages the remote build life cycle and downloads the final APK to 'app-release.apk'
-        run: |
-          eas build:run --platform android --profile preview --non-interactive --output=app-release.apk
+        # This uses build:run now
+        run: eas build:run --platform android --profile preview --non-interactive --output=app-release.apk
 
       - name: Upload artifact to GitHub Artifact Storage
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: app-release.apk 
+          path: app-release.apk
 
   deploy-firebase:
     needs: [build]
     runs-on: ubuntu-latest
     steps:
-      # ... (deployment steps remain the same) ...
       - name: Download artifact from GitHub Artifact Storage
         uses: actions/download-artifact@v4
         with:
@@ -47,6 +50,7 @@ jobs:
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
-          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          # Make sure this secret name is correct in GitHub settings:
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }} 
           groups: QA
           file: app-release.apk
