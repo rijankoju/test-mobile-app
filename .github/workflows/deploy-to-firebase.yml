@@ -48,15 +48,13 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       # ... (inside the 'deploy-firebase' job steps) ...
-
       - name: Download the last completed Android APK artifact
         run: |
-          # The system already has jq installed based on your logs, but this line is safe to keep
-          # sudo apt-get update && sudo apt-get install -y jq 
+          sudo apt-get update && sudo apt-get install -y jq
 
-          # Find the build URL of the most recent finished Android 'preview' build
-          # FIXED: Added single quotes around the jq filter '..artifacts.buildUrl'
-          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json | jq -r '..artifacts.buildUrl')
+          # Find the build URL using explicit object access (more robust quoting)
+          BUILD_JSON=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json)
+          BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.[0].artifacts.buildUrl')
           
           if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
             echo "Error: Could not find a finished build URL."
@@ -64,7 +62,7 @@ jobs:
           fi
 
           echo "Downloading APK from: $BUILD_URL"
-          curl -L -o app-release.apk $BUILD_URL
+          curl -L -o app-release.apk "$BUILD_URL"
         shell: bash
 
       - name: Deploy to Firebase App Distribution
@@ -72,5 +70,5 @@ jobs:
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-          groups: QA
+          groups: me-user
           file: app-release.apk
