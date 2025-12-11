@@ -26,31 +26,42 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Start EAS Android Build and Download Artifact
-        # This uses build:run now
-        run: eas build:run --platform android --profile preview --non-interactive --output=app-release.apk
+      - name: Trigger EAS Android Build (Cloud)
+        # This triggers the build remotely. No --non-interactive or --output needed here.
+        run: eas build --platform android --profile preview
 
-      - name: Upload artifact to GitHub Artifact Storage
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app-release.apk
+      # Note: We are no longer using upload-artifact in this job, 
+      # as the file is not locally present yet.
+      # The deploy job will fetch the build result directly from EAS servers.
 
   deploy-firebase:
+    # This job now depends on the result of the 'build' job being complete in the cloud
     needs: [build]
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact from GitHub Artifact Storage
-        uses: actions/download-artifact@v4
+      - name: Setup Node.js (needed for the Expo action in this job)
+        uses: actions/setup-node@v4
         with:
-          name: app-release-apk
-          path: ./
+          node-version: 18
+
+      - name: Setup Expo (needed to access EAS context)
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Download the last completed Android APK artifact
+        # We use a *different* Expo action here to find the latest successful build and download it
+        run: |
+          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --json | jq -r '.[0].artifacts.buildUrl')
+          echo "Downloading APK from: $BUILD_URL"
+          curl -L -o app-release.apk $BUILD_URL
+        shell: bash
 
       - name: Deploy to Firebase App Distribution
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
-          # Make sure this secret name is correct in GitHub settings:
-          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }} 
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
           groups: QA
-          file: app-release.apk
+          file: app-release.apk # This path now exists due to the curl command
