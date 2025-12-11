@@ -47,11 +47,15 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      # ... (inside the 'deploy-firebase' job steps) ...
+
       - name: Download the last completed Android APK artifact
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
+          # The system already has jq installed based on your logs, but this line is safe to keep
+          # sudo apt-get update && sudo apt-get install -y jq 
 
           # Find the build URL of the most recent finished Android 'preview' build
+          # FIXED: Added single quotes around the jq filter '..artifacts.buildUrl'
           BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json | jq -r '..artifacts.buildUrl')
           
           if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
