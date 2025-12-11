@@ -1,57 +1,55 @@
-name: Build & Upload to Firebase App Distribution
+name: Build and Deploy to Firebase App Distribution
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Install Node
-      - uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # Install EAS CLI
-      - name: Install EAS
-        run: npm install -g eas-cli
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Debug Token
-        run: |
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "ERROR: EXPO_TOKEN secret is not set"
-            exit 1
-          else
-            echo "Token is set (length: $(echo -n '${{ secrets.EXPO_TOKEN }}' | wc -c))"
-          fi  
+      - name: Install dependencies
+        run: npm install
 
-      # OPTIONAL: verify token is valid
-      - name: Verify Expo Token
-        run: eas whoami --token ${{ secrets.EXPO_TOKEN }}
-
-      # Build APK using token
       - name: Build Android APK with EAS
-        run: eas build --platform android --profile apk --non-interactive --token ${{ secrets.EXPO_TOKEN }} --output json > build_output.json
+        run: eas build --platform android --local --output=app-release.apk
+        # Ensure your eas.json is configured for a local build profile if needed
+        # Example: eas build --local --platform android --profile preview
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: app-release.apk
 
-      # Extract build URL from JSON
-      - name: Extract APK URL
-        id: artifact
-        run: |
-          URL=$(cat build_output.json | jq -r '.artifacts.buildUrl')
-          echo "url=$URL" >> $GITHUB_OUTPUT
+  deploy-firebase:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release
 
-      # Download the generated APK
-      - name: Download APK
-        run: wget "${{ steps.artifact.outputs.url }}" -O app-release.apk
-
-      # Upload to Firebase App Distribution
-      - name: Upload to Firebase App Distribution
+      - name: Deploy to Firebase App Distribution
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
-          serviceCredentialsFileContent: ${{ secrets.CREDENTIAL_FILE_CONTENT }}
-          groups: testers
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: QA # Specify a tester group you created in the Firebase console
           file: app-release.apk
