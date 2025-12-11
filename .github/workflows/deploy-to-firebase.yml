@@ -27,17 +27,15 @@ jobs:
         run: npm install
 
       - name: Trigger EAS Android Build (Cloud)
-        # This command is simple and correct. It starts the build on Expo's servers.
-        run: eas build --platform android --profile preview
+        # Added the --non-interactive flag here!
+        run: eas build --platform android --profile preview --non-interactive
 
-      # The job finishes here. The build continues in the cloud.
+      # We still need the second job to download the artifact and deploy it.
 
   deploy-firebase:
-    # This job waits for the 'build' job to complete
     needs: [build]
     runs-on: ubuntu-latest
     steps:
-      # We need Expo CLI tools available in this new job context to fetch the build URL
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,16 +45,14 @@ jobs:
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }} # Needs the EXPO_TOKEN again
+          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Download the last completed Android APK artifact
-        # We find the URL using eas build:list and download the file using curl
         run: |
-          # Install jq to parse JSON output efficiently
           sudo apt-get update && sudo apt-get install -y jq
 
           # Find the build URL of the most recent finished Android 'preview' build
-          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json | jq -r '.[0].artifacts.buildUrl')
+          BUILD_URL=$(eas build:list --status=finished --platform=android --profile=preview --limit=1 --json | jq -r '..artifacts.buildUrl')
           
           if [ "$BUILD_URL" == "null" ] || [ -z "$BUILD_URL" ]; then
             echo "Error: Could not find a finished build URL."
