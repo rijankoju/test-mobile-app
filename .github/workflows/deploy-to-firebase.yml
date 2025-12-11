@@ -26,9 +26,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Trigger EAS Android Build (Cloud)
-        # This triggers the build remotely. No --non-interactive or --output needed here.
-        run: eas build --platform android --profile preview
+      - name: Start EAS Android Build, Wait, and Download Artifact
+        # This is the correct combination for CI/CD: 
+        # It waits for the build and saves the output locally.
+        run: eas build:run --platform android --profile preview --non-interactive --output=app-release.apk
+
+      - name: Upload artifact to GitHub Artifact Storage
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app-release.apk 
 
       # Note: We are no longer using upload-artifact in this job, 
       # as the file is not locally present yet.
